@@ -5,17 +5,18 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import random
 
-from logger import setup_logger
-from models import Token, TokenStatus
-from dexscreener_client import DexscreenerClient
-from db import Database
+from token_scanner.logger import setup_logger
+from token_scanner.models import Token, TokenStatus
+from token_scanner.dexscreener_client import DexscreenerClient
+from token_scanner.db import Database
+from token_scanner.config import Config
 
 logger = setup_logger("token_scanner")
 
 class TokenScanner:
     """Clase para escanear y detectar nuevos tokens"""
     
-    def __init__(self, db: Database, scan_interval: int = 60):
+    def __init__(self, db: Database, scan_interval: int = None):
         """
         Inicializa el scanner de tokens
         
@@ -25,6 +26,12 @@ class TokenScanner:
         """
         self.db = db
         self.dexscreener = DexscreenerClient()
+
+        # Cargar configuración si no se proporciona el intervalo
+        if scan_interval is None:
+            Config.load_environment()
+            scan_interval = Config.get_scan_interval()
+
         self.scan_interval = scan_interval
         self.running = False
         self.last_scan_time = None

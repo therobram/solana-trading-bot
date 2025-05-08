@@ -6,15 +6,20 @@ import os
 from typing import List, Optional
 from datetime import datetime
 
-from models import Token, TokenStatus, TokenAnalysis
-from scanner import TokenScanner
-from db import Database
-from logger import setup_logger
+from token_scanner.models import Token, TokenStatus, TokenAnalysis
+from token_scanner.scanner import TokenScanner
+from token_scanner.db import Database
+from token_scanner.logger import setup_logger
+from token_scanner.config import Config
 
-logger = setup_logger("token_scanner_api")
+# Cargar configuración del entorno
+Config.load_environment()
+
+# Configurar logger con el nivel adecuado
+logger = setup_logger("token_scanner_api", level=Config.get_log_level())
 
 # Inicializar componentes
-mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/trading_bot")
+mongo_uri = Config.get_mongo_uri()
 db = Database(mongo_uri)
 scanner = TokenScanner(db)
 

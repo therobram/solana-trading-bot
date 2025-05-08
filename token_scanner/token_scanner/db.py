@@ -7,8 +7,9 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 import os
 
-from logger import setup_logger
-from models import Token, TokenStatus, TokenAnalysis, Transaction
+from token_scanner.logger import setup_logger
+from token_scanner.models import Token, TokenStatus, TokenAnalysis, Transaction
+from token_scanner.config import Config
 
 logger = setup_logger("database")
 
@@ -23,7 +24,10 @@ class Database:
             mongo_uri: URI de conexión a MongoDB (si es None, se toma de MONGO_URI)
         """
         if mongo_uri is None:
-            mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/trading_bot")
+
+            Config.load_environment()
+            mongo_uri = Config.get_mongo_uri()
+            # mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/trading_bot")
             
         self.client = motor.motor_asyncio.AsyncIOMotorClient(mongo_uri)
         self.db = self.client.get_database("trading_bot")
