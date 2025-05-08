@@ -9,9 +9,9 @@ import asyncio
 from functools import wraps
 import backoff
 
-from logger import setup_logger
-from rpc_manager import get_best_rpc
-from config import RPC_RETRY_ATTEMPTS
+from rpc_service.logger import setup_logger
+from rpc_service.rpc_manager import get_best_rpc
+from rpc_service.config import RPC_RETRY_ATTEMPTS
 
 logger = setup_logger("tx_sender")
 
@@ -41,11 +41,11 @@ async def send_transaction_async(tx_data: str, opts: Dict[str, Any] = None) -> s
     """
     try:
         # Obtener el mejor RPC
-        rpc_url = get_best_rpc()
-        logger.info(f"Enviando transacción usando RPC: {rpc_url}")
+        rpc_info = get_best_rpc()
+        logger.info(f"Enviando transacción usando RPC: {rpc_info['rpc']}")
         
         # Crear cliente RPC
-        client = Client(rpc_url)
+        client = Client(rpc_info['rpc'])
         
         # Convertir de base58 a bytes
         raw_tx = base58.b58decode(tx_data)

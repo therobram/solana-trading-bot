@@ -2,6 +2,7 @@
 import logging
 import sys
 from datetime import datetime
+from pathlib import Path
 
 class CustomFormatter(logging.Formatter):
     """Formatter personalizado con colores y estructura profesional"""
@@ -24,14 +25,26 @@ class CustomFormatter(logging.Formatter):
 def setup_logger(name):
     """Configura y retorna un logger con el nombre especificado"""
     logger = logging.getLogger(name)
+    
+    # Evitar configurar múltiples veces el mismo logger
+    if logger.handlers:
+        return logger
+    
     logger.setLevel(logging.INFO)
     
     # Handler para consola
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(CustomFormatter())
     
-    # Handler para archivo
-    file_handler = logging.FileHandler(f'logs/{name}_{datetime.now().strftime("%Y%m%d")}.log')
+    # Asegurar que el directorio de logs existe
+    # Resolución del path donde se encuentra este archivo, luego subir un nivel
+    # y buscar/crear el directorio logs
+    logs_dir = Path(__file__).resolve().parent.parent / 'logs'
+    logs_dir.mkdir(exist_ok=True)
+    
+    # Handler para archivo con ruta garantizada
+    log_file = logs_dir / f'{name}_{datetime.now().strftime("%Y%m%d")}.log'
+    file_handler = logging.FileHandler(log_file)
     file_formatter = logging.Formatter(
         '%(asctime)s [%(levelname)s] %(name)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
@@ -40,4 +53,6 @@ def setup_logger(name):
     
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
+    
+    logger.debug(f"Logger '{name}' configurado correctamente")
     return logger

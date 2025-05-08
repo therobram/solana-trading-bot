@@ -52,23 +52,38 @@ El proyecto está organizado en microservicios independientes que se comunican e
 ## 🛠️ Instalación
 
 1. Clona este repositorio:
-git clone https://github.com/tuusuario/solana-trading-bot.git
+
+git clone https://github.com/therobram/solana-trading-bot.git
+
 cd solana-trading-bot
 
+
 2. Crea y configura el archivo `.env`:
+
 cp .env.example .env
+
 Edita el archivo `.env` con tus credenciales y configuraciones
 
+
 3. Para desarrollo local, levanta los servicios con Docker Compose:
+
 docker-compose up -d
 
+
 4. Para despliegue en GCP:
+
 Configura las variables de Terraform
+
 cp terraform/terraform.tfvars.example terraform/terraform.tfvars
+
 Edita terraform.tfvars con tus valores
+
 Construye y sube las imágenes
+
 ./scripts/build_and_push.sh
+
 Despliega la infraestructura
+
 ./scripts/deploy.sh
 
 ## ⚙️ Configuración
@@ -78,19 +93,27 @@ Despliega la infraestructura
 El archivo `.env` debe contener lo siguiente:
 
 MongoDB
+
 MONGO_URI=mongodb://admin@mongodb:27017/trading_bot?authSource=admin
 
+
 Jupiter API
+
 JUPITER_API=https://quote-api.jup.ag
 
+
 Wallet
+
 PRIVATE_KEY_JSON=[231, 127, 214, 105, 61, 217, 17, 124, ...]
 
+
 RPC Endpoints
+
 RPC_SOLANA=https://api.mainnet-beta.solana.com
 RPC_QUIKNODE=https://your-node.solana-mainnet.quiknode.pro/key
 RPC_HELIUS=https://mainnet.helius-rpc.com/?api-key=key
 Agrega todos tus RPC endpoints aquí
+
 
 RPC Service Config
 RPC_CACHE_TTL=60

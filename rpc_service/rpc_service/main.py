@@ -7,10 +7,10 @@ import time
 import os
 from typing import Dict, List, Any, Optional
 
-from rpc_manager import get_best_rpc, get_all_rpc_statuses
-from tx_sender import send_tx, TransactionError
-from config import APP_NAME, APP_VERSION
-from logger import setup_logger
+from rpc_service.rpc_manager import get_best_rpc, get_all_rpc_statuses
+from rpc_service.tx_sender import send_tx, TransactionError
+from rpc_service.config import APP_NAME, APP_VERSION
+from rpc_service.logger import setup_logger
 
 logger = setup_logger("rpc_service")
 
@@ -28,8 +28,17 @@ class RPCStatus(BaseModel):
     latency_ms: Optional[float]
     healthy: bool
 
+# Respuesta RPC Deprecada
 class BestRPCResponse(BaseModel):
     rpc: str
+    timestamp: float
+
+# Respuesta RPC new
+class RPCDetailedResponse(BaseModel):
+    """Modelo de respuesta detallada para información del RPC"""
+    url: str
+    latency_ms: Optional[float] = None
+    healthy: bool = True
     timestamp: float
 
 # Inicializar FastAPI
@@ -77,13 +86,25 @@ def root():
         "timestamp": time.time()
     }
 
-@app.get("/rpc", response_model=BestRPCResponse, tags=["RPC"])
+@app.get("/health", tags=["General"])
+def health_check():
+    """Endpoint específico de health check"""
+    return {
+        "service": APP_NAME,
+        "version": APP_VERSION,
+        "status": "healthy",
+        "timestamp": time.time()
+    }
+
+@app.get("/rpc", response_model=RPCDetailedResponse, tags=["RPC"])
 def get_fastest_rpc(force_refresh: bool = False):
-    """Obtiene el RPC más rápido actualmente disponible"""
+    """Obtiene el RPC más rápido actualmente disponible con información detallada"""
     try:
-        rpc = get_best_rpc(force_refresh=force_refresh)
+        rpc_info = get_best_rpc(force_refresh=force_refresh)
         return {
-            "rpc": rpc,
+            "url": rpc_info['rpc'],
+            "latency_ms": rpc_info.get("latency_ms"),
+            "healthy": rpc_info.get("healthy", True),
             "timestamp": time.time()
         }
     except Exception as e:

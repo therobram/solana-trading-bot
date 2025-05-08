@@ -8,8 +8,8 @@ import aiohttp
 from typing import Dict, List, Optional, Tuple, Any
 import json
 
-from config import RPCS, RPC_CACHE_TTL, RPC_TIMEOUT, RPC_RETRY_ATTEMPTS
-from logger import setup_logger
+from rpc_service.config import RPCS, RPC_CACHE_TTL, RPC_TIMEOUT, RPC_RETRY_ATTEMPTS
+from rpc_service.logger import setup_logger
 
 logger = setup_logger("rpc_manager")
 
@@ -70,13 +70,21 @@ async def check_all_rpcs() -> List[Dict]:
         })
     return statuses
 
-def get_best_rpc(force_refresh=False) -> str:
-    """Obtiene el mejor RPC basado en latencia, con soporte para cache"""
+def get_best_rpc(force_refresh=False) -> dict:
+    """
+    Obtiene el mejor RPC basado en latencia, con soporte para cache
+    
+    Args:
+        force_refresh (bool): Forzar actualización ignorando cache
+        
+    Returns:
+        dict: Diccionario con información del mejor RPC: {"rpc": url, "latency_ms": valor}
+    """
     if not force_refresh:
-        best_rpc = cache.get("best_rpc")
-        if best_rpc:
-            logger.debug(f"Usando RPC cacheado: {best_rpc}")
-            return best_rpc
+        cached_rpc = cache.get("best_rpc")
+        if cached_rpc:
+            logger.debug(f"Usando RPC cacheado: {cached_rpc['rpc']} ({cached_rpc['latency_ms']}ms)")
+            return cached_rpc
     
     # Necesitamos refrescar
     logger.info("Buscando el mejor RPC disponible...")
@@ -92,12 +100,17 @@ def get_best_rpc(force_refresh=False) -> str:
     
     if not healthy_rpcs:
         logger.warning("No hay RPCs saludables disponibles. Intentando con cualquiera...")
-        # Intentar con cualquier RPC como fallback
-        return random.choice(RPCS)
+        # Crear un diccionario de fallback con un RPC aleatorio
+        fallback_rpc = random.choice(RPCS)
+        return {
+            "rpc": fallback_rpc,
+            "latency_ms": None,
+            "healthy": False
+        }
     
     # Ordenar por latencia y seleccionar el mejor
-    best_rpc = min(healthy_rpcs, key=lambda x: x["latency_ms"])["rpc"]
-    logger.info(f"Mejor RPC seleccionado: {best_rpc} ({best_rpc['latency_ms']}ms)")
+    best_rpc = min(healthy_rpcs, key=lambda x: x["latency_ms"])
+    logger.info(f"Mejor RPC seleccionado: {best_rpc['rpc']} ({best_rpc['latency_ms']}ms)")
     
     # Actualizar cache
     cache.set("best_rpc", best_rpc)
