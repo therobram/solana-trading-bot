@@ -16,6 +16,7 @@ Este microservicio gestiona la conexión con distintos proveedores de RPC de Sol
 - Python 3.9+
 - pip (gestor de paquetes de Python)
 - Docker (opcional, para ejecución containerizada)
+- Docker Compose (opcional, para entorno de desarrollo completo)
 - Variables de entorno configuradas en archivo `.env`
 
 ## Estructura del proyecto
@@ -50,6 +51,10 @@ RPC_CACHE_TTL=60        # Tiempo de vida en caché (segundos)
 RPC_TIMEOUT=10          # Timeout para peticiones RPC (segundos)
 RPC_RETRY_ATTEMPTS=3    # Número de reintentos si falla la petición
 LOG_LEVEL=INFO          # Nivel de logging (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+
+# MongoDB (para Docker Compose)
+MONGO_USER=admin
+MONGO_PASSWORD=adminpassword
 ```
 
 ## Instalación y ejecución local (sin Docker)
@@ -93,6 +98,132 @@ Para ejecutar el servicio en un contenedor Docker:
    ```
 
 Los logs del servicio se mostrarán en la consola, y el servidor estará disponible en `http://localhost:8000`.
+
+## Ejecución con Docker Compose
+
+Para ejecutar el microservicio junto con MongoDB y otros servicios, puedes utilizar Docker Compose. Este método es ideal para desarrollo y pruebas ya que configura automáticamente la red y dependencias entre servicios.
+
+### Archivo docker-compose.yml
+
+Coloca este archivo en la raíz del proyecto:
+
+```yaml
+version: '3.8'
+
+services:
+  # MongoDB
+  mongodb:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-adminpassword}
+    networks:
+      - trading_bot_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Mongo Express (UI para MongoDB)
+  mongo-express:
+    image: mongo-express
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGO_USER:-admin}
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGO_PASSWORD:-adminpassword}
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_BASICAUTH_USERNAME=${MONGO_USER:-admin}
+      - ME_CONFIG_BASICAUTH_PASSWORD=${MONGO_PASSWORD:-adminpassword}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - trading_bot_network
+    restart: unless-stopped
+
+  # RPC Service
+  rpc-service:
+    build: ./rpc_service
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - MONGO_URI=mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-adminpassword}@mongodb:27017/trading_bot?authSource=admin
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - trading_bot_network
+    restart: unless-stopped
+
+networks:
+  trading_bot_network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+```
+
+### Pasos para ejecutar con Docker Compose
+
+1. **Preparación**: Asegúrate de tener el archivo `.env` en la raíz del proyecto con todas las variables necesarias.
+
+2. **Crear el directorio de logs**:
+   ```bash
+   mkdir -p logs
+   ```
+
+3. **Construir y levantar todos los servicios**:
+   ```bash
+   # Desde la raíz del proyecto
+   docker-compose build
+   docker-compose up -d
+   ```
+
+4. **Para solo levantar el RPC Service con MongoDB**:
+   ```bash
+   docker-compose up -d mongodb mongo-express rpc-service
+   ```
+
+5. **Verificar que los servicios están funcionando**:
+   ```bash
+   # Ver el estado de todos los servicios
+   docker-compose ps
+   
+   # Ver logs del RPC Service
+   docker-compose logs rpc-service
+   
+   # Ver logs en tiempo real
+   docker-compose logs -f
+   ```
+
+### Acceso a los servicios
+
+- **RPC Service API**: http://localhost:8000
+- **Mongo Express (UI para MongoDB)**: http://localhost:8081
+  - Usuario: el valor de MONGO_USER (por defecto "admin")
+  - Contraseña: el valor de MONGO_PASSWORD (por defecto "adminpassword")
+
+### Detener los servicios
+
+```bash
+# Detener todos los servicios pero mantener los volúmenes
+docker-compose down
+
+# Detener y eliminar volúmenes (perderás datos de MongoDB)
+docker-compose down -v
+```
 
 ## Endpoints API
 
@@ -154,6 +285,15 @@ Verifica que tu archivo `.env` contiene al menos una variable con el prefijo `RP
 ### Error al crear archivos de log
 
 El sistema intentará crear automáticamente un directorio `logs/` si no existe. Si encuentras errores relacionados con permisos, verifica que el usuario que ejecuta la aplicación tiene permisos de escritura en el directorio.
+
+### MongoDB o Mongo Express no funcionan
+
+Si tienes problemas accediendo a MongoDB o Mongo Express:
+
+1. Verifica que las credenciales en `.env` coinciden con las que estás usando para acceder
+2. Revisa los logs con `docker-compose logs mongodb` o `docker-compose logs mongo-express`
+3. Asegúrate de que los servicios están funcionando con `docker-compose ps`
+4. Si cambias las credenciales en `.env`, debes reiniciar los servicios con `docker-compose down` y `docker-compose up -d`
 
 ### Comportamiento inconsistente en Docker vs Local
 
