@@ -1,0 +1,11 @@
+### 📁 terraform/terraform.tfvars.example
+project_id = "tu-proyecto-gcp"
+region = "us-central1"
+zone = "us-central1-a"
+artifact_registry_location = "us-central1"
+mongodb_host = "cluster0.mongodb.net"
+mongodb_user = "admin"
+mongodb_password = "password_segura"
+wallet_private_key_json = "[0, 1, 2, 3, ...]"
+rpc_solana = "https://api.mainnet-beta.solana.com"
+# Agrega más variables de RPC aquí
