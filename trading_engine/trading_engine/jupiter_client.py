@@ -5,14 +5,31 @@ import base58
 from typing import Dict, Any, Optional, List
 import asyncio
 import backoff
-from solana.rpc.api import Client
-from solana.keypair import Keypair
-from solana.transaction import Transaction
-from solana.publickey import PublicKey
 import base64
 import os
 
-from logger import setup_logger
+# Configuración de modo simulación
+SIMULATION_MODE = os.getenv("SIMULATION_MODE", "false").lower() == "true"
+
+# Importaciones de Solana con manejo de errores
+try:
+    # Primero intentamos importar los módulos originales de Solana
+    from solana.rpc.api import Client
+    from solana.keypair import Keypair
+    from solana.transaction import Transaction
+    from solana.publickey import PublicKey
+    
+    # Verificamos que podemos crear instancias básicas para confirmar que funcionan
+    test_publickey = PublicKey("11111111111111111111111111111111")
+    print("Usando módulos de solana-py reales")
+except (ImportError, AttributeError, Exception) as e:
+    # Si hay algún error, utilizamos nuestro wrapper
+    print(f"Error con módulos solana-py: {str(e)}")
+    print("Usando wrapper personalizado para Solana")
+    from trading_engine.solana_wrapper import Client, Keypair, Transaction, PublicKey
+
+from trading_engine.logger import setup_logger
+from trading_engine.config import Config
 
 logger = setup_logger("jupiter_client")
 
@@ -30,6 +47,10 @@ class JupiterClient:
             wallet_private_key: Clave privada de la wallet en formato JSON (array de enteros)
             rpc_url: URL del nodo RPC Solana
         """
+        # Log del modo de ejecución
+        if SIMULATION_MODE:
+            logger.warning("Ejecutando Jupiter Client en MODO SIMULACIÓN - sin transacciones reales")
+        
         # Configurar wallet
         if wallet_private_key is None:
             wallet_private_key = os.getenv("PRIVATE_KEY_JSON")
@@ -83,6 +104,24 @@ class JupiterClient:
         Returns:
             Respuesta de la API de cotización
         """
+        # Si estamos en modo simulación, devolver datos simulados
+        if SIMULATION_MODE:
+            logger.info(f"[SIMULACIÓN] Obteniendo cotización para {amount} de {input_mint} a {output_mint}")
+            
+            # Proporcionar una cotización simulada pero realista
+            # Un factor de conversión aleatorio pero que parezca realista
+            conversion_factor = 0.95  # Ejemplo: pérdida del 5% por slippage, etc.
+            
+            return {
+                "inAmount": str(amount),
+                "outAmount": str(int(amount * conversion_factor)),
+                "otherAmountThreshold": str(int(amount * conversion_factor * (1 - slippage_bps/10000))),
+                "priceImpactPct": "0.5",
+                "marketInfos": [],
+                "swapMode": swap_mode
+            }
+        
+        # Código original para obtener cotización real
         params = {
             "inputMint": input_mint,
             "outputMint": output_mint,
@@ -127,6 +166,18 @@ class JupiterClient:
         if not self.wallet:
             raise ValueError("No se ha configurado una wallet")
         
+        # Si estamos en modo simulación, devolver datos simulados
+        if SIMULATION_MODE:
+            logger.info("[SIMULACIÓN] Preparando transacción de swap simulada")
+            
+            # Crear una transacción simulada en base64 (solo bytes aleatorios)
+            fake_tx = base64.b64encode(os.urandom(128)).decode('utf-8')
+            
+            return {
+                "swapTransaction": fake_tx
+            }
+        
+        # Código original para preparar transacción real
         try:
             payload = {
                 "quoteResponse": quote_response,
@@ -191,8 +242,19 @@ class JupiterClient:
             tx_data = swap_data.get("swapTransaction")
             tx_buffer = base64.b64decode(tx_data)
             
+            # Si estamos en modo simulación, generar una firma simulada
+            if SIMULATION_MODE:
+                logger.info("[SIMULACIÓN] Simulando firma y envío de transacción")
+                signature = f"SimSignature{hash(tx_data)}"
+                logger.info(f"[SIMULACIÓN] Swap ejecutado. Signature: {signature}")
+                return signature
+            
             # Para versioned transaction (Jupiter v6+)
-            from solana.transaction import VersionedTransaction
+            try:
+                from solana.transaction import VersionedTransaction
+            except ImportError:
+                from trading_engine.solana_wrapper import VersionedTransaction
+                
             transaction = VersionedTransaction.deserialize(tx_buffer)
             transaction.sign([self.wallet])
             
@@ -234,6 +296,18 @@ class JupiterClient:
         """
         if not self.wallet:
             raise ValueError("No se ha configurado una wallet")
+        
+        # Si estamos en modo simulación, devolver datos simulados
+        if SIMULATION_MODE:
+            logger.info(f"[SIMULACIÓN] Obteniendo balance simulado para {token_mint}")
+            
+            # Valores simulados para diferentes tokens
+            if token_mint == self.SOL_MINT:
+                return 1_000_000_000  # 1 SOL en lamports
+            elif token_mint == self.USDC_MINT:
+                return 1_000_000     # 1 USDC (6 decimales)
+            else:
+                return 1_000_000_000  # 1 unidad de token genérico (9 decimales típico)
             
         try:
             # Para SOL nativo
@@ -244,7 +318,11 @@ class JupiterClient:
                 return None
             
             # Para SPL tokens
-            from spl.token.client import Token
+            try:
+                from spl.token.client import Token
+            except ImportError:
+                logger.error("No se pudo importar spl.token.client.Token")
+                return None
             
             token_client = Token(
                 conn=self.rpc_client,

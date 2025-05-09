@@ -1,6 +1,9 @@
 ### 📁 trading_engine/token_evaluator.py
 from typing import Dict, List, Tuple, Any, Optional
-from models import Token, TokenAnalysis
+from trading_engine.models import Token, TokenAnalysis
+from trading_engine.logger import setup_logger
+
+logger = setup_logger("token_evaluator")
 
 class TokenEvaluator:
     """Clase para evaluar tokens y determinar decisiones de inversión"""

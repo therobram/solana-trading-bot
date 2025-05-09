@@ -6,17 +6,21 @@ import os
 from typing import List, Optional
 from datetime import datetime
 
-from models import Token, TokenStatus, TokenAnalysis, Transaction
-from db import Database
-from jupiter_client import JupiterClient
-from trading_engine import TradingEngine
-from position_tracker import PositionTracker
-from logger import setup_logger
+from trading_engine.models import Token, TokenStatus, TokenAnalysis, Transaction
+from trading_engine.db import Database
+from trading_engine.jupiter_client import JupiterClient
+from trading_engine.trading_engine import TradingEngine
+from trading_engine.position_tracker import PositionTracker
+from trading_engine.logger import setup_logger
+from trading_engine.config import Config
+
+# Cargar configuración del entorno
+Config.load_environment()
 
 logger = setup_logger("trading_engine_api")
 
 # Inicializar componentes
-mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/trading_bot")
+mongo_uri = Config.get_mongo_uri()
 db = Database(mongo_uri)
 jupiter_client = JupiterClient()
 trading_engine = TradingEngine(db, jupiter_client)
@@ -98,4 +102,4 @@ async def check_positions():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8002"))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("trading_engine.main:app", host="0.0.0.0", port=port, reload=True)

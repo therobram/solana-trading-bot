@@ -5,12 +5,13 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from decimal import Decimal
 
-from logger import setup_logger
-from models import Token, TokenStatus, TokenAnalysis, Transaction
-from jupiter_client import JupiterClient
-from token_evaluator import TokenEvaluator
-from position_tracker import PositionTracker
-from db import Database
+from trading_engine.logger import setup_logger
+from trading_engine.models import Token, TokenStatus, TokenAnalysis, Transaction
+from trading_engine.jupiter_client import JupiterClient
+from trading_engine.token_evaluator import TokenEvaluator
+from trading_engine.position_tracker import PositionTracker
+from trading_engine.db import Database
+from trading_engine.config import Config
 
 logger = setup_logger("trading_engine")
 
@@ -34,7 +35,7 @@ class TradingEngine:
         self.USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
         
         # Configuración
-        self.max_daily_investment = Decimal("2000.0")  # Límite diario de inversión (USD)
+        self.max_daily_investment = Decimal(str(Config.get_max_daily_investment()))
         self.position_tracking_enabled = True
     
     async def initialize(self):
