@@ -286,7 +286,102 @@ docker run --rm -p 8002:8002 \
 
 ## Ejecución con Docker Compose
 
-Crea o modifica el archivo `docker-compose.yml` en el directorio raíz del proyecto:
+El Trading Engine está diseñado para integrarse perfectamente en una arquitectura de microservicios completa para el bot de trading. Puedes desplegarlo como parte de un sistema más amplio que incluye RPC Service, Token Scanner y API Gateway.
+
+### Preparación para Docker Compose
+
+Antes de ejecutar el servicio con Docker Compose, asegúrate de tener toda la estructura necesaria:
+
+1. **Estructura de directorios recomendada**:
+
+```
+solana-trading-bot/
+├── api_gateway/
+├── rpc_service/
+├── token_scanner/
+├── trading_engine/
+│   ├── trading_engine/
+│   │   ├── __init__.py
+│   │   ├── main.py
+│   │   └── ... (resto de archivos)
+│   ├── Dockerfile
+│   ├── docker-entrypoint.sh
+│   ├── solana-install.sh
+│   ├── requirements.txt
+│   └── setup.py
+├── docker-compose.yml
+└── .env.docker
+```
+
+2. **Archivos necesarios para el Trading Engine**:
+
+   - En el directorio trading_engine, asegúrate de descargar el instalador de Solana:
+   ```bash
+   cd trading_engine
+   curl -sSfL https://release.anza.xyz/stable/install -o solana-install.sh
+   chmod +x solana-install.sh
+   ```
+
+   - Crea el script de entrada `docker-entrypoint.sh` en el mismo directorio:
+   ```bash
+   cat > docker-entrypoint.sh << 'EOF'
+   #!/bin/bash
+   set -e
+
+   # Imprimir información sobre el modo de ejecución
+   echo "Iniciando Trading Engine en modo: $(if [ "$SIMULATION_MODE" = "true" ]; then echo "SIMULACIÓN"; else echo "REAL"; fi)"
+
+   # Si estamos en modo real, verificar conexión con Solana
+   if [ "$SIMULATION_MODE" != "true" ]; then
+       echo "Verificando conexión con Solana..."
+       # Asegurarse de que solana está en el PATH
+       export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+       # Verificar instalación
+       which solana || echo "Solana no está en el PATH"
+       solana --version || echo "Error al ejecutar solana --version"
+       # Configurar RPC
+       solana config set --url $RPC_SOLANA || echo "Error configurando URL de RPC Solana"
+       solana cluster-version || echo "No se pudo conectar a Solana RPC, pero continuaremos de todos modos"
+   fi
+
+   # Iniciar la aplicación
+   exec uvicorn trading_engine.main:app --host 0.0.0.0 --port 8002 --reload
+   EOF
+
+   chmod +x docker-entrypoint.sh
+   ```
+
+3. **Configuración de variables de entorno**:
+   
+   Crea o actualiza tu archivo `.env.docker` en el directorio raíz con estas variables:
+   ```
+   # Configuración general
+   ENVIRONMENT=docker
+   LOG_LEVEL=INFO
+   
+   # MongoDB
+   MONGO_USER=admin
+   MONGO_PASSWORD=adminpassword
+   
+   # Solana y Jupiter
+   RPC_SOLANA=https://api.mainnet-beta.solana.com
+   JUPITER_API=https://quote-api.jup.ag
+   PRIVATE_KEY_JSON=[231, 127, 214, 105, 61, 217, 17, 124, 177, 9, 36, 20, 98, 149, 236, 22, 58, 232, 30, 140, 34, 120, 41, 63, 63, 176, 39, 58, 129, 51, 1, 37]
+   
+   # Trading Engine Config
+   MAX_DAILY_INVESTMENT=50
+   POSITION_TRACKING_INTERVAL=60
+   SIMULATION_MODE=true
+   
+   # URLs de servicios internos (para API Gateway)
+   RPC_SERVICE_URL=http://rpc-service:8000
+   TOKEN_SCANNER_URL=http://token-scanner:8001
+   TRADING_ENGINE_URL=http://trading-engine:8002
+   ```
+
+### Configuración del Docker Compose
+
+El archivo `docker-compose.yml` completo para todo el sistema de trading debería ser similar a este:
 
 ```yaml
 services:
@@ -298,19 +393,81 @@ services:
     volumes:
       - mongodb_data:/data/db
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=admin
-      - MONGO_INITDB_ROOT_PASSWORD=adminpassword
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-adminpassword}
     networks:
       - trading_bot_network
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     restart: unless-stopped
 
-  # Trading Engine
+  # Mongo Express (UI para MongoDB)
+  mongo-express:
+    image: mongo-express
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGO_USER:-admin}
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGO_PASSWORD:-adminpassword}
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_BASICAUTH_USERNAME=${MONGO_USER:-admin}
+      - ME_CONFIG_BASICAUTH_PASSWORD=${MONGO_PASSWORD:-adminpassword}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - trading_bot_network
+    restart: unless-stopped
+
+  # RPC Service
+  rpc-service:
+    build: ./rpc_service
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.docker
+    environment:
+      - ENVIRONMENT=docker
+      - MONGO_URI=mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-adminpassword}@mongodb:27017/trading_bot?authSource=admin
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - trading_bot_network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/rpc/status" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # Token Scanner
+  token-scanner:
+    build: ./token_scanner
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env.docker
+    environment:
+      - ENVIRONMENT=docker
+      - MONGO_URI=mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-adminpassword}@mongodb:27017/trading_bot?authSource=admin
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - trading_bot_network
+    restart: unless-stopped
+
+  # Trading Engine - Configuración Optimizada
   trading-engine:
     build: ./trading_engine
     ports:
@@ -318,13 +475,45 @@ services:
     env_file:
       - .env.docker
     environment:
-      - MONGO_URI=mongodb://admin:adminpassword@mongodb:27017/trading_bot?authSource=admin
-      - SIMULATION_MODE=true
+      - ENVIRONMENT=docker
+      - MONGO_URI=mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-adminpassword}@mongodb:27017/trading_bot?authSource=admin
+      - SIMULATION_MODE=${SIMULATION_MODE:-true}
+      - RPC_SOLANA=${RPC_SOLANA:-https://api.mainnet-beta.solana.com}
     volumes:
       - ./logs:/app/logs
     depends_on:
       mongodb:
         condition: service_healthy
+      rpc-service:
+        condition: service_started
+    networks:
+      - trading_bot_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # API Gateway
+  api-gateway:
+    build: ./api_gateway
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env.docker
+    environment:
+      - ENVIRONMENT=docker
+      - RPC_SERVICE_URL=http://rpc-service:8000
+      - TOKEN_SCANNER_URL=http://token-scanner:8001
+      - TRADING_ENGINE_URL=http://trading-engine:8002
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - rpc-service
+      - token-scanner
+      - trading-engine
     networks:
       - trading_bot_network
     restart: unless-stopped
@@ -337,18 +526,125 @@ volumes:
   mongodb_data:
 ```
 
-Para ejecutar con Docker Compose:
+### Despliegue paso a paso
 
-```bash
-# Iniciar todos los servicios
-docker-compose up -d
+1. **Preparación de directorios y archivos**:
+   ```bash
+   # Asegúrate de estar en el directorio raíz del proyecto
+   cd solana-trading-bot
+   
+   # Crea el directorio para logs si no existe
+   mkdir -p logs
+   
+   # Descarga el instalador de Solana en el directorio trading_engine
+   cd trading_engine
+   curl -sSfL https://release.anza.xyz/stable/install -o solana-install.sh
+   chmod +x solana-install.sh
+   
+   # Regresa al directorio raíz
+   cd ..
+   ```
 
-# Ver logs
-docker-compose logs -f trading-engine
+2. **Inicio de los servicios**:
 
-# Detener todos los servicios
-docker-compose down
-```
+   Para iniciar todo el sistema:
+   ```bash
+   docker-compose up -d
+   ```
+
+   Para iniciar solo el Trading Engine y sus dependencias:
+   ```bash
+   docker-compose up -d mongodb rpc-service trading-engine
+   ```
+
+3. **Verificación del despliegue**:
+   ```bash
+   # Ver el estado de todos los servicios
+   docker-compose ps
+   
+   # Ver logs del Trading Engine
+   docker-compose logs -f trading-engine
+   
+   # Verificar que el servicio está respondiendo
+   curl http://localhost:8002/
+   ```
+
+4. **Cambio de modo simulación a real**:
+
+   Para cambiar del modo simulación al modo real, edita el archivo `.env.docker` y cambia:
+   ```
+   SIMULATION_MODE=true
+   ```
+   a:
+   ```
+   SIMULATION_MODE=false
+   ```
+
+   Luego reinicia el servicio:
+   ```bash
+   docker-compose restart trading-engine
+   ```
+
+5. **Detener servicios**:
+   ```bash
+   # Detener todos los servicios
+   docker-compose down
+   
+   # Detener todo y eliminar volúmenes (¡perderás datos!)
+   docker-compose down -v
+   ```
+
+### Integración con otros microservicios
+
+El Trading Engine está diseñado para trabajar en conjunto con otros microservicios:
+
+1. **RPC Service**: Proporciona acceso optimizado a la red Solana.
+2. **Token Scanner**: Detecta tokens nuevos para potenciales inversiones.
+3. **API Gateway**: Expone una API unificada para interactuar con todos los servicios.
+
+El flujo de trabajo típico es:
+- El Token Scanner detecta nuevos tokens en Solana
+- El Trading Engine analiza estos tokens usando sus criterios de inversión
+- Si se recomienda la compra, el Trading Engine ejecuta operaciones a través de Jupiter DEX
+- El RPC Service proporciona la conexión óptima a la blockchain
+- Todos los servicios se pueden controlar a través del API Gateway
+
+### Supervisión y mantenimiento
+
+Una vez desplegado, puedes supervisar el sistema así:
+
+1. **Panel de MongoDB**: Accede a http://localhost:8081 para gestionar la base de datos.
+2. **Logs**: Consulta los logs para ver el funcionamiento del sistema:
+   ```bash
+   docker-compose logs -f trading-engine
+   ```
+3. **Documentación API**: Accede a http://localhost:8002/docs para ver la documentación de la API del Trading Engine.
+4. **Estadísticas Docker**: Supervisa el rendimiento de los contenedores:
+   ```bash
+   docker stats
+   ```
+
+### Solución de problemas comunes
+
+1. **Error "Container exited with code 1"**:
+   - Verifica los logs: `docker-compose logs trading-engine`
+   - Asegúrate de que solana-install.sh tiene permisos de ejecución
+   - Comprueba que el Dockerfile es correcto
+
+2. **Error al conectar con MongoDB**:
+   - Verifica que MongoDB está en ejecución: `docker-compose ps mongodb`
+   - Confirma que las credenciales en .env.docker son correctas
+   - Asegúrate de que la red docker está configurada correctamente
+
+3. **Solana no se instala correctamente**:
+   - Prueba descargar una versión específica: `curl -sSfL https://release.anza.xyz/v1.16.1/install -o solana-install.sh`
+   - Ejecuta el instalador manualmente dentro del contenedor para ver errores detallados
+   - Considera ejecutar en modo simulación si solo necesitas probar la funcionalidad
+
+4. **Acceso denegado a volúmenes**:
+   - Asegúrate de que el directorio logs tiene los permisos adecuados: `chmod 777 logs`
+   - Verifica la propiedad de los directorios: `ls -la logs`
+
 
 ## Modo Simulación vs Modo Real
 

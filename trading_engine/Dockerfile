@@ -2,7 +2,7 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Instalar dependencias del sistema necesarias (actualizado según la documentación oficial)
+# Instalar dependencias del sistema necesarias
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
@@ -23,14 +23,17 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     . "$HOME/.cargo/env"
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Copiar el instalador de Solana previamente descargado
-COPY solana-install.sh .
+# Copiar instalador local como respaldo
+COPY solana-install.sh /tmp/solana-install.sh.backup
 
-# Instalar Solana CLI usando el instalador local
-RUN chmod +x solana-install.sh && \
+# Intentar descargar el instalador, usar copia local si falla
+RUN curl -sSfL https://release.anza.xyz/stable/install -o solana-install.sh || \
+    (echo "Descarga fallida, usando copia local" && cp /tmp/solana-install.sh.backup solana-install.sh) && \
+    chmod +x solana-install.sh && \
     ./solana-install.sh && \
-    export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH" && \
-    echo 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' >> ~/.bashrc
+    export PATH="/root/.local/share/solana/install/active_release/bin:$PATH" && \
+    echo 'export PATH="/root/.local/share/solana/install/active_release/bin:$PATH"' >> ~/.bashrc && \
+    rm -f solana-install.sh
 
 # Configurar PATH para los siguientes comandos
 ENV PATH="/root/.local/share/solana/install/active_release/bin:${PATH}"
@@ -43,8 +46,9 @@ RUN ls -la /root/.local/share/solana/install/active_release/bin/ || echo "Direct
 # Copiar requirements.txt primero para aprovechar la caché de Docker
 COPY requirements.txt .
 
-# Instalar dependencias Python
-RUN pip install --no-cache-dir -r requirements.txt
+# Instalar dependencias Python incluyendo solana-py específicamente
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir solana==0.30.2
 
 # Copiar el script de entrada
 COPY docker-entrypoint.sh /

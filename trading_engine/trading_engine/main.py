@@ -98,6 +98,31 @@ async def check_positions():
     except Exception as e:
         logger.error(f"Error verificando posiciones: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error al verificar posiciones: {str(e)}")
+    
+@app.post("/test-swap", tags=["Testing"])
+async def test_swap():
+    """Ejecuta un swap de prueba con valores mínimos"""
+    try:
+        # SOL a USDC con una cantidad muy pequeña (0.001 SOL = 1000000 lamports)
+        signature = await trading_engine.jupiter.execute_swap(
+            input_mint="So11111111111111111111111111111111111111112",  # SOL
+            output_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+            amount=1000000,  # 0.001 SOL
+            slippage_bps=100  # 1% slippage
+        )
+        
+        if signature:
+            return {
+                "status": "success",
+                "message": "Swap de prueba ejecutado correctamente",
+                "signature": signature,
+                "explorer_url": f"https://explorer.solana.com/tx/{signature}"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Error ejecutando swap de prueba")
+    except Exception as e:
+        logger.error(f"Error en swap de prueba: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -81,7 +81,7 @@ services:
       - trading_bot_network
     restart: unless-stopped
 
-  # Trading Engine
+# Trading Engine
   trading-engine:
     build: ./trading_engine
     ports:
@@ -91,13 +91,23 @@ services:
     environment:
       - ENVIRONMENT=docker
       - MONGO_URI=mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-adminpassword}@mongodb:27017/trading_bot?authSource=admin
+      - SIMULATION_MODE=${SIMULATION_MODE:-true}
+      - RPC_SOLANA=${RPC_SOLANA:-https://api.mainnet-beta.solana.com}
     volumes:
       - ./logs:/app/logs
     depends_on:
       mongodb:
         condition: service_healthy
+      rpc-service:
+        condition: service_started
     networks:
       - trading_bot_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
   # API Gateway
